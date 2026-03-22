@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 1.433rem;
+}
+
+main header {
+  padding: 0;
+  margin: 0;
+}
+
+main h1 {
+  margin-bottom: 0.25em;
+  margin-top: 0;
+}
+
+main h3 {
+  margin-bottom: 0;
+}
+
+main h3 {
+  font-size: 1.25em;
+}
+
+.fingerprint-panel {
+  text-align: left;
+  align-self: stretch;
+  width: 100%;
+  max-width: 42rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.fingerprint-panel > div {
+  margin-bottom: 0.35em;
+}
+
+.fingerprint-panel__section {
+  margin-top: 1.25em;
+  margin-bottom: 0.35em;
+}
