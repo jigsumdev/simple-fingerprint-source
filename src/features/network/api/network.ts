@@ -6,15 +6,6 @@ import { parseCloudflareTrace } from '@/utils/parsers';
 const CLOUDFLARE_TRACE = 'https://www.cloudflare.com/cdn-cgi/trace';
 
 // Zod schemas for API response validation
-const IPApiSchema = z.object({
-  status: z.string(),
-  query: z.string().optional(),
-  country: z.string().optional(),
-  regionName: z.string().optional(),
-  city: z.string().optional(),
-  isp: z.string().optional(),
-});
-
 const IPWhoSchema = z.object({
   success: z.boolean().optional(),
   ip: z.string(),
@@ -24,6 +15,8 @@ const IPWhoSchema = z.object({
   connection: z
     .object({
       isp: z.string().optional(),
+      org: z.string().optional(),
+      asn: z.number().optional(),
     })
     .optional(),
 });
@@ -34,6 +27,17 @@ const DBIPSchema = z.object({
   regionName: z.string().optional(),
   countryName: z.string().optional(),
   isp: z.string().optional(),
+});
+
+/** HTTPS + CORS-friendly; includes `org` and `asn` for ISP / ASN on static hosts (no local MMDB). */
+const IPApiCoSchema = z.object({
+  ip: z.string().optional(),
+  city: z.union([z.string(), z.null()]).optional(),
+  region: z.union([z.string(), z.null()]).optional(),
+  country_name: z.string().optional(),
+  country_code: z.string().optional(),
+  org: z.union([z.string(), z.null()]).optional(),
+  asn: z.union([z.string(), z.null()]).optional(),
 });
 
 const LocalGeoipSchema = z.object({
@@ -58,12 +62,70 @@ interface APIProvider {
     region: string;
     country: string;
     isp: string;
+    countryCode?: string;
   };
   schema?: z.ZodSchema;
 }
 
-// HTTPS providers first — plain HTTP (ip-api) last to avoid mixed-content failures on HTTPS origins
+/** Prefer isp, then org / connection.org; attach ASN when present (static hosting has no local MMDB). */
+function enrichIspAsn(
+  providerUrl: string,
+  data: Record<string, unknown>,
+  rawIsp: string | null
+): { isp: string; asn?: number; organization?: string } {
+  let isp = rawIsp?.trim() ?? '';
+  let asn: number | undefined;
+  let organization: string | undefined;
+
+  if (providerUrl.includes('ipapi.co')) {
+    const orgRaw = data['org'];
+    const org = typeof orgRaw === 'string' ? orgRaw.trim() : '';
+    const asnRaw = data['asn'];
+    const asnStr = typeof asnRaw === 'string' ? asnRaw.trim() : '';
+    const m = asnStr.match(/^AS(\d+)$/i);
+    if (m?.[1]) {
+      const n = Number.parseInt(m[1], 10);
+      if (Number.isFinite(n)) asn = n;
+    }
+    if (!isp && org) isp = org;
+    if (!organization && org) organization = org;
+  }
+
+  if (providerUrl.includes('ipwho')) {
+    const conn = data['connection'];
+    if (conn && typeof conn === 'object') {
+      const c = conn as Record<string, unknown>;
+      const org = typeof c['org'] === 'string' ? c['org'].trim() : '';
+      if (!isp && org) isp = org;
+      if (typeof c['asn'] === 'number' && Number.isFinite(c['asn'])) {
+        asn = c['asn'];
+      }
+      if (!organization && org) organization = org;
+    }
+  }
+
+  return {
+    isp: isp || 'Unknown',
+    asn,
+    organization,
+  };
+}
+
+/** ipapi.co first: returns `org` + `asn` over HTTPS (fills ISP/ASN on GitHub Pages without local MMDB). */
 const providers: APIProvider[] = [
+  {
+    url: 'https://ipapi.co/json/',
+    type: 'json',
+    fields: {
+      ip: 'ip',
+      city: 'city',
+      region: 'region',
+      country: 'country_name',
+      isp: 'org',
+      countryCode: 'country_code',
+    },
+    schema: IPApiCoSchema,
+  },
   {
     url: 'https://ipwho.is/',
     type: 'json',
@@ -87,18 +149,6 @@ const providers: APIProvider[] = [
       isp: 'isp',
     },
     schema: DBIPSchema,
-  },
-  {
-    url: 'http://ip-api.com/json/?fields=status,query,country,regionName,city,isp',
-    type: 'json',
-    fields: {
-      ip: 'query',
-      city: 'city',
-      region: 'regionName',
-      country: 'country',
-      isp: 'isp',
-    },
-    schema: IPApiSchema,
   },
 ];
 
@@ -189,7 +239,9 @@ export async function scanNetwork(): Promise<NetworkInfo> {
     if (local) return local;
   }
 
-  for (const provider of providers) {
+  for (let i = 0; i < providers.length; i++) {
+    const provider = providers[i]!;
+    const isLastProvider = i === providers.length - 1;
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), env.apiTimeout);
@@ -229,12 +281,28 @@ export async function scanNetwork(): Promise<NetworkInfo> {
       const rawRegion = resolvePath(provider.fields.region, data);
       const rawCountry = resolvePath(provider.fields.country, data);
       const rawIsp = resolvePath(provider.fields.isp, data);
+      const enriched = enrichIspAsn(provider.url, data, rawIsp);
+      const rawCountryCode = provider.fields.countryCode
+        ? resolvePath(provider.fields.countryCode, data)
+        : null;
+      const countryCode = rawCountryCode?.trim() || undefined;
+
       const city = rawCity?.trim() || 'Unknown';
       const region = rawRegion?.trim() ?? '';
       const country = rawCountry?.trim() || 'Unknown';
-      const isp = rawIsp?.trim() || 'Unknown';
+      const isp = enriched.isp;
 
       if (city === 'Unknown' && !region && country === 'Unknown' && isp === 'Unknown') {
+        continue;
+      }
+
+      /* e.g. ipwho may return geo but empty connection.isp — try next provider for org/asn */
+      if (
+        !isLastProvider &&
+        isp === 'Unknown' &&
+        enriched.asn == null &&
+        enriched.organization == null
+      ) {
         continue;
       }
 
@@ -246,6 +314,9 @@ export async function scanNetwork(): Promise<NetworkInfo> {
         isp,
         status: 'Verified',
         source: new URL(provider.url).hostname,
+        countryCode,
+        asn: enriched.asn,
+        organization: enriched.organization,
       };
     } catch (error) {
       console.warn(`Provider ${provider.url} failed:`, error);
