@@ -7,7 +7,14 @@
     "types": ["@cloudflare/workers-types"],
     "strict": true,
     "skipLibCheck": true,
-    "noEmit": true
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@/types": ["./src/types/index.ts"],
+      "@/lib/*": ["./src/lib/*"]
+    }
   },
-  "include": ["src/worker.ts"]
+  "include": ["src/worker.ts", "src/lib/**/*.ts", "src/types/**/*.ts"],
+  "exclude": ["src/lib/env.ts"]
 }

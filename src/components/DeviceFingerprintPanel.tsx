@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { getPixelRatio, getTimezone } from '@/features/fingerprint/api/fingerprint';
-import type { FingerprintData, NetworkInfo } from '@/types';
+import type { FingerprintData, NetworkInfo, NormalizedIdentity, MatchResult } from '@/types';
 
 const EM = '\u2014';
 
@@ -57,17 +57,6 @@ function screenResolution(fp: FingerprintData | null): string {
   return EM;
 }
 
-function getDeviceLabel(fp: FingerprintData | null): string {
-  const touch =
-    fp?.navigatorDeepDive?.maxTouchPoints ??
-    (typeof navigator !== 'undefined' ? navigator.maxTouchPoints : 0);
-  const mobileHint =
-    fp?.clientHints?.mobile === true ||
-    (typeof navigator !== 'undefined' && navigator.userAgentData?.mobile === true);
-  if ((touch ?? 0) > 0 || mobileHint) return 'Mobile';
-  return 'Computer';
-}
-
 function mapWindowsVersion(platformVersion: string): string | null {
   const parts = platformVersion.split('.');
   const major = Number.parseInt(parts[0] ?? '', 10);
@@ -93,11 +82,6 @@ function formatOS(fp: FingerprintData | null): string {
   if (plat && pv) return `${plat} ${pv}`.trim();
   if (plat) return plat;
   return dash(fp.navigatorDeepDive?.platform);
-}
-
-function formatEntropy(fp: FingerprintData | null): string {
-  if (!fp) return EM;
-  return `${fp.entropy.digestBits}-bit digest, ${fp.entropy.contributingSignals} signal groups`;
 }
 
 function pageLoadMs(fp: FingerprintData | null): string {
@@ -157,63 +141,125 @@ function ipLabel(ip: string | undefined): string {
   return ip.includes(':') ? 'IP Address (IPv6)' : 'IP Address (IPv4)';
 }
 
+// ---------------------------------------------------------------------------
+// Props
+// ---------------------------------------------------------------------------
+
 interface DeviceFingerprintPanelProps {
   network: NetworkInfo | null;
   fingerprint: FingerprintData | null;
+  normalized: NormalizedIdentity | null;
+  matchResult: MatchResult | null;
   loadingNetwork: boolean;
   loadingFingerprint: boolean;
 }
 
-export function DeviceFingerprintPanel({
-  network,
-  fingerprint,
-  loadingNetwork,
-  loadingFingerprint,
-}: DeviceFingerprintPanelProps) {
-  const [expanded, setExpanded] = useState(false);
+// ---------------------------------------------------------------------------
+// Match summary component
+// ---------------------------------------------------------------------------
 
-  const fpReady = !loadingFingerprint && fingerprint != null;
-  const netReady = !loadingNetwork && network != null;
-
-  if (!expanded) {
-    return (
-      <div className="fingerprint-panel">
-        <div>
-          <button type="button" onClick={() => setExpanded(true)}>
-            Expand
-          </button>
-        </div>
-
-        <div><strong>Fingerprint:</strong> {fpReady ? dash(fingerprint!.legacyDisplayHash) : EM}</div>
-        <div><strong>{ipLabel(network?.ip)}:</strong> {netReady ? dash(network!.ip) : EM}</div>
-        <div><strong>City:</strong> {formatLocation(network)}</div>
-        <div><strong>Country:</strong> {formatJurisdiction(network)}</div>
-        <div><strong>Internet Provider:</strong> {netReady ? dash(network!.isp) : EM}</div>
-        <div><strong>Graphics Card:</strong> {fpReady ? dash(fingerprint!.gpu) : EM}</div>
-        <div><strong>Screen Resolution:</strong> {screenResolution(fingerprint)}</div>
-        <div><strong>Operating System:</strong> {formatOS(fingerprint)}</div>
-        <div><strong>Timezone:</strong> {getTimezone()}</div>
-        <div><strong>Touchscreen:</strong> {fpReady ? touchscreenLine(fingerprint) : EM}</div>
-        <div><strong>Languages:</strong> {fingerprint?.navigatorDeepDive?.languages?.length ? fingerprint.navigatorDeepDive.languages.join(', ') : EM}</div>
-      </div>
-    );
-  }
-
-  const fp = fingerprint;
+function MatchSummary({ match }: { match: MatchResult | null }) {
+  if (!match) return null;
 
   return (
-    <div className="fingerprint-panel fingerprint-panel--expanded">
-      <div>
-        <button type="button" onClick={() => setExpanded(false)}>
-          Collapse
-        </button>
+    <div className="match-summary">
+      <h3>Match Summary</h3>
+      <div><strong>Classification:</strong> {match.classification}</div>
+      <div><strong>Confidence:</strong> {match.confidence}</div>
+      {match.lastSeen && (
+        <div><strong>Last seen:</strong> {match.lastSeen}</div>
+      )}
+      <div><strong>Observations in cluster:</strong> {match.observationCount}</div>
+      {match.matchScore > 0 && (
+        <div><strong>Match score:</strong> {(match.matchScore * 100).toFixed(1)}%</div>
+      )}
+      {match.changedFields.length > 0 && (
+        <div><strong>Changed:</strong> {match.changedFields.join(', ')}</div>
+      )}
+      {match.unchangedFields.length > 0 && (
+        <div><strong>Unchanged:</strong> {match.unchangedFields.join(', ')}</div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Normalized sections
+// ---------------------------------------------------------------------------
+
+function NormalizedView({ norm, fp }: { norm: NormalizedIdentity; fp: FingerprintData | null }) {
+  return (
+    <>
+      <div className="section-block">
+        <h3>Device</h3>
+        <div><strong>OS:</strong> {norm.device.osBucket}</div>
+        <div><strong>CPU Cores:</strong> {norm.device.cpuBucket}</div>
+        <div><strong>RAM:</strong> {norm.device.ramBucket}</div>
+        <div><strong>GPU:</strong> {norm.device.gpuBucket}</div>
+        <div><strong>Screen Class:</strong> {norm.device.screenClass}</div>
       </div>
 
+      <div className="section-block">
+        <h3>Network</h3>
+        <div><strong>IP Version:</strong> {norm.network.ipVersion}</div>
+        <div><strong>ASN:</strong> {norm.network.asn}</div>
+        <div><strong>ISP:</strong> {norm.network.isp}</div>
+        <div><strong>Country/Region:</strong> {norm.network.countryRegion}</div>
+        <div><strong>Timezone Consistency:</strong> {norm.network.timezoneConsistency}</div>
+      </div>
+
+      <div className="section-block">
+        <h3>Browser</h3>
+        <div><strong>Family:</strong> {norm.browser.family}</div>
+        <div><strong>Engine:</strong> {norm.browser.engine}</div>
+        <div><strong>Major Version:</strong> {norm.browser.majorVersionBucket}</div>
+        <div><strong>Client Hints:</strong> {norm.browser.clientHintsSummary}</div>
+      </div>
+
+      <div className="section-block">
+        <h3>Environment</h3>
+        <div><strong>Viewport:</strong> {norm.environment.viewportBucket}</div>
+        <div><strong>DPR:</strong> {norm.environment.dprBucket}</div>
+        <div><strong>Canvas Hash:</strong> {norm.environment.canvasHash}</div>
+        <div><strong>WebGL Hash:</strong> {norm.environment.webglHash}</div>
+        <div><strong>Audio Hash:</strong> {norm.environment.audioHash}</div>
+        <div><strong>Languages:</strong> {norm.environment.languageSet}</div>
+        <div><strong>Storage Quota:</strong> {norm.environment.storageQuotaBucket}</div>
+      </div>
+
+      <div className="section-block">
+        <h3>Fingerprint Metadata</h3>
+        <div><strong>Hash algorithm:</strong> SHA-256</div>
+        <div><strong>Signal groups:</strong> {fp?.entropy.contributingSignals ?? EM}</div>
+        <div><strong>Estimated stability:</strong> medium-high</div>
+        <div><strong>Estimated uniqueness:</strong> high</div>
+      </div>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Expanded raw view (all original fields preserved)
+// ---------------------------------------------------------------------------
+
+function RawView({
+  fp,
+  network,
+  fpReady,
+  netReady,
+}: {
+  fp: FingerprintData | null;
+  network: NetworkInfo | null;
+  fpReady: boolean;
+  netReady: boolean;
+}) {
+  return (
+    <>
       <div><strong>Fingerprint:</strong> {fpReady ? dash(fp!.legacyDisplayHash) : EM}</div>
       <div><strong>Device ID (SHA-256):</strong> {fpReady ? dash(fp!.primaryId) : EM}</div>
       <div><strong>Audio Signature:</strong> {fpReady ? dash(fp!.audioSignature) : EM}</div>
       <div><strong>Bot Detection:</strong> {botDetection(fp)}</div>
-      <div><strong>Entropy:</strong> {formatEntropy(fp)}</div>
+      <div><strong>Entropy:</strong> {fp ? `${fp.entropy.digestBits}-bit digest, ${fp.entropy.contributingSignals} signal groups` : EM}</div>
       <div><strong>Page Load:</strong> {pageLoadMs(fp)}</div>
 
       <div><strong>{ipLabel(network?.ip)}:</strong> {netReady ? dash(network!.ip) : EM}</div>
@@ -248,6 +294,71 @@ export function DeviceFingerprintPanel({
       <div><strong>Client Hints:</strong> {formatClientHints(fp?.clientHints ?? null)}</div>
       <div><strong>Installed Fonts:</strong> {formatFonts(fp?.detectedFonts)}</div>
       <div><strong>User Agent:</strong> {fp?.navigatorDeepDive?.userAgent ? fp.navigatorDeepDive.userAgent : EM}</div>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main panel
+// ---------------------------------------------------------------------------
+
+export function DeviceFingerprintPanel({
+  network,
+  fingerprint,
+  normalized,
+  matchResult,
+  loadingNetwork,
+  loadingFingerprint,
+}: DeviceFingerprintPanelProps) {
+  const [expanded, setExpanded] = useState(false);
+
+  const fpReady = !loadingFingerprint && fingerprint != null;
+  const netReady = !loadingNetwork && network != null;
+
+  if (!expanded) {
+    return (
+      <div className="fingerprint-panel">
+        <div className="panel-controls">
+          <button type="button" onClick={() => setExpanded(true)}>
+            Expand raw data
+          </button>
+        </div>
+
+        <MatchSummary match={matchResult} />
+
+        {normalized ? (
+          <NormalizedView norm={normalized} fp={fingerprint} />
+        ) : (
+          /* Fallback while waiting for backend response */
+          <>
+            <div><strong>Fingerprint:</strong> {fpReady ? dash(fingerprint!.legacyDisplayHash) : EM}</div>
+            <div><strong>{ipLabel(network?.ip)}:</strong> {netReady ? dash(network!.ip) : EM}</div>
+            <div><strong>City:</strong> {formatLocation(network)}</div>
+            <div><strong>Country:</strong> {formatJurisdiction(network)}</div>
+            <div><strong>Internet Provider:</strong> {netReady ? dash(network!.isp) : EM}</div>
+            <div><strong>Graphics Card:</strong> {fpReady ? dash(fingerprint!.gpu) : EM}</div>
+            <div><strong>Screen Resolution:</strong> {screenResolution(fingerprint)}</div>
+            <div><strong>Operating System:</strong> {formatOS(fingerprint)}</div>
+            <div><strong>Timezone:</strong> {getTimezone()}</div>
+            <div><strong>Touchscreen:</strong> {fpReady ? touchscreenLine(fingerprint) : EM}</div>
+            <div><strong>Languages:</strong> {fingerprint?.navigatorDeepDive?.languages?.length ? fingerprint.navigatorDeepDive.languages.join(', ') : EM}</div>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="fingerprint-panel fingerprint-panel--expanded">
+      <div className="panel-controls">
+        <button type="button" onClick={() => setExpanded(false)}>
+          Collapse
+        </button>
+      </div>
+
+      <MatchSummary match={matchResult} />
+
+      <RawView fp={fingerprint} network={network} fpReady={fpReady} netReady={netReady} />
     </div>
   );
 }

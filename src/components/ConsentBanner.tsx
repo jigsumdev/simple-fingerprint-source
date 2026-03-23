@@ -36,11 +36,17 @@ export function ConsentBanner({ onAccept }: ConsentBannerProps) {
       <h2 id={`${id}-title`}>Analysis consent</h2>
       <p id={`${id}-desc`}>
         This page collects technical signals from your browser (graphics, audio, fonts, network egress,
-        and optionally local network candidates via WebRTC) to build a device digest. It does{' '}
-        <strong>not</strong> compare your fingerprint to a global population — that would require a
-        server-side cohort. Results stay in this page unless you copy them.
+        and optionally local network candidates via WebRTC) to build a device digest. Scan results are{' '}
+        <strong>stored server-side</strong> so the system can compare your current scan to prior
+        observations and classify whether you are the same device, a different browser, or an entirely
+        new visitor.
       </p>
       <ul>
+        <li>
+          <strong>What is stored:</strong> a normalized identity summary, core and extended fingerprint
+          hashes, and the raw scan signals. Raw observations are retained for up to 90 days; exact IP
+          addresses are hashed after 30 days.
+        </li>
         <li>
           <strong>Full analysis</strong>: includes WebRTC candidate collection and high-entropy User-Agent
           Client Hints where the browser allows.

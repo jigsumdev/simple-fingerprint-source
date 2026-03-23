@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { env } from '@/lib/env';
-import type { AppState, FingerprintData, ScanOptions } from '@/types';
+import type { AppState, FingerprintData, ScanOptions, ObservationPayload, ObservationResponse } from '@/types';
 import { scanNetwork } from '@/features/network/api/network';
 import {
   getCanvasHash,
@@ -10,6 +10,7 @@ import {
   getLogicalProcessors,
   getSystemMemory,
   isAutomationDetected,
+  getTimezone,
 } from '@/features/fingerprint/api/fingerprint';
 import {
   getEnhancedCanvasHash,
@@ -36,6 +37,11 @@ interface AppStore extends AppState {
 const initialState: AppState = {
   network: null,
   fingerprint: null,
+  normalized: null,
+  matchResult: null,
+  observationId: null,
+  coreFingerprint: null,
+  extendedFingerprint: null,
   loadingNetwork: false,
   loadingFingerprint: false,
   error: null,
@@ -46,6 +52,24 @@ const COHORT_NOTE =
 
 function countContributingSignals(parts: unknown[]): number {
   return parts.filter((p) => p !== null && p !== undefined && p !== '').length;
+}
+
+async function submitObservation(payload: ObservationPayload): Promise<ObservationResponse | null> {
+  try {
+    const res = await fetch('/api/observations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      console.warn('Observation submission failed:', res.status);
+      return null;
+    }
+    return await res.json() as ObservationResponse;
+  } catch (e) {
+    console.warn('Observation submission error:', e);
+    return null;
+  }
 }
 
 export const useAppStore = create<AppStore>()(
@@ -60,6 +84,11 @@ export const useAppStore = create<AppStore>()(
           loadingNetwork: true,
           loadingFingerprint: true,
           error: null,
+          normalized: null,
+          matchResult: null,
+          observationId: null,
+          coreFingerprint: null,
+          extendedFingerprint: null,
         });
 
         const tScanStart = performance.now();
@@ -212,6 +241,26 @@ export const useAppStore = create<AppStore>()(
             loadingFingerprint: false,
             error: null,
           });
+
+          // Submit to backend for persistence + comparison (non-blocking UI)
+          const timezone = getTimezone();
+          const observationPayload: ObservationPayload = {
+            fingerprint: fingerprintData,
+            network: networkInfo,
+            timezone,
+          };
+
+          const obsResponse = await submitObservation(observationPayload);
+
+          if (obsResponse) {
+            set({
+              normalized: obsResponse.normalized,
+              matchResult: obsResponse.match,
+              observationId: obsResponse.observationId,
+              coreFingerprint: obsResponse.coreFingerprint,
+              extendedFingerprint: obsResponse.extendedFingerprint,
+            });
+          }
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
 

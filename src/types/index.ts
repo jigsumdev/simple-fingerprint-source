@@ -111,16 +111,137 @@ export interface FingerprintData {
   storageEstimate?: string;
 }
 
-// Combined Application State
-export interface AppState {
-  network: NetworkInfo | null;
-  fingerprint: FingerprintData | null;
-  loadingNetwork: boolean;
-  loadingFingerprint: boolean;
-  error: string | null;
-}
-
 export interface ScanOptions {
   /** Skip WebRTC and high-entropy client hints */
   strict?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Normalized identity layer
+// ---------------------------------------------------------------------------
+
+export interface NormalizedDevice {
+  osBucket: string;
+  cpuBucket: string;
+  ramBucket: string;
+  gpuBucket: string;
+  screenClass: string;
+}
+
+export interface NormalizedNetwork {
+  ipVersion: string;
+  asn: string;
+  isp: string;
+  countryRegion: string;
+  timezoneConsistency: string;
+}
+
+export interface NormalizedBrowser {
+  family: string;
+  engine: string;
+  majorVersionBucket: string;
+  clientHintsSummary: string;
+}
+
+export interface NormalizedEnvironment {
+  viewportBucket: string;
+  dprBucket: string;
+  canvasHash: string;
+  webglHash: string;
+  audioHash: string;
+  languageSet: string;
+  storageQuotaBucket: string;
+}
+
+export interface NormalizedIdentity {
+  device: NormalizedDevice;
+  network: NormalizedNetwork;
+  browser: NormalizedBrowser;
+  environment: NormalizedEnvironment;
+}
+
+// ---------------------------------------------------------------------------
+// Classification / matching
+// ---------------------------------------------------------------------------
+
+export type Classification =
+  | 'same device, same browser'
+  | 'same device, same browser, environment changed'
+  | 'same device, different browser'
+  | 'same device likely, network changed'
+  | 'insufficient confidence'
+  | 'different device likely'
+  | 'initial baseline';
+
+export interface MatchResult {
+  classification: Classification;
+  confidence: 'high' | 'medium' | 'low' | 'none';
+  matchedClusterId: string | null;
+  matchScore: number;
+  lastSeen: string | null;
+  observationCount: number;
+  changedFields: string[];
+  unchangedFields: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Observation / cluster persistence records
+// ---------------------------------------------------------------------------
+
+export interface ObservationRecord {
+  observationId: string;
+  createdAt: string;
+  rawJson: string;
+  normalizedJson: string;
+  coreFingerprint: string;
+  extendedFingerprint: string;
+  matchedClusterId: string | null;
+  comparisonJson: string | null;
+}
+
+export interface IdentityCluster {
+  clusterId: string;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  latestCoreFingerprint: string;
+  representativeNormalizedJson: string;
+  observationCount: number;
+  confidenceLevel: string;
+}
+
+export interface ClusterMembership {
+  clusterId: string;
+  observationId: string;
+  matchScore: number;
+  classification: Classification;
+}
+
+/** Payload the client POSTs to /api/observations */
+export interface ObservationPayload {
+  fingerprint: FingerprintData;
+  network: NetworkInfo;
+  timezone: string;
+}
+
+/** Response from POST /api/observations */
+export interface ObservationResponse {
+  observationId: string;
+  normalized: NormalizedIdentity;
+  coreFingerprint: string;
+  extendedFingerprint: string;
+  match: MatchResult;
+}
+
+// Combined Application State (extended)
+export interface AppState {
+  network: NetworkInfo | null;
+  fingerprint: FingerprintData | null;
+  normalized: NormalizedIdentity | null;
+  matchResult: MatchResult | null;
+  observationId: string | null;
+  coreFingerprint: string | null;
+  extendedFingerprint: string | null;
+  loadingNetwork: boolean;
+  loadingFingerprint: boolean;
+  error: string | null;
 }

@@ -11,6 +11,8 @@ export function App() {
   const {
     network,
     fingerprint,
+    normalized,
+    matchResult,
     loadingNetwork,
     loadingFingerprint,
     error,
@@ -57,6 +59,8 @@ export function App() {
       <DeviceFingerprintPanel
         network={network}
         fingerprint={fingerprint}
+        normalized={normalized}
+        matchResult={matchResult}
         loadingNetwork={loadingNetwork}
         loadingFingerprint={loadingFingerprint}
       />
