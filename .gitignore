@@ -8,6 +8,9 @@ dist
 # MaxMind GeoLite2 databases (large binary + license-bound)
 GeoIP/*.mmdb
 
+# Wrangler / Cloudflare
+.wrangler
+
 # Editor
 .vscode
 *.swp

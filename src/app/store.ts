@@ -117,8 +117,45 @@ export const useAppStore = create<AppStore>()(
           timings.parallelAsync = Math.round(performance.now() - tAsync);
           timings.total = Math.round(performance.now() - tScanStart);
 
+          const stableScreen = {
+            screenWidth: screenGeometry.screenWidth,
+            screenHeight: screenGeometry.screenHeight,
+            colorDepth: screenGeometry.colorDepth,
+            pixelDepth: screenGeometry.pixelDepth,
+            devicePixelRatio: screenGeometry.devicePixelRatio,
+          };
+
+          const stableNav = {
+            platform: navigatorDeepDive.platform,
+            hardwareConcurrency: navigatorDeepDive.hardwareConcurrency,
+            deviceMemory: navigatorDeepDive.deviceMemory,
+            maxTouchPoints: navigatorDeepDive.maxTouchPoints,
+            vendor: navigatorDeepDive.vendor,
+            language: navigatorDeepDive.language,
+            languages: navigatorDeepDive.languages,
+          };
+
+          const { timingAnomaly: _ta, chromeRuntime: _cr, ...stableAutoFlags } = automationFlags;
+
+          const he = clientHints?.highEntropy as Record<string, unknown> | null | undefined;
+          const stableHints = clientHints
+            ? {
+                platform: clientHints.platform,
+                mobile: clientHints.mobile,
+                highEntropy: he
+                  ? {
+                      architecture: he['architecture'],
+                      bitness: he['bitness'],
+                      model: he['model'],
+                      platform: he['platform'],
+                      platformVersion: he['platformVersion'],
+                    }
+                  : null,
+              }
+            : null;
+
           const idParts: unknown[] = [
-            'precision-scanner-v2',
+            'precision-scanner-v3',
             environmentHash,
             audioSignature,
             gpu,
@@ -129,12 +166,11 @@ export const useAppStore = create<AppStore>()(
             advancedWebGLHash,
             detectedFonts,
             enhancedAudioHash,
-            automationFlags,
-            screenGeometry,
+            stableAutoFlags,
+            stableScreen,
             mediaCapabilities,
-            webrtcIps,
-            navigatorDeepDive,
-            clientHints,
+            stableNav,
+            stableHints,
             automationFlag,
           ];
 

@@ -68,11 +68,28 @@ function getDeviceLabel(fp: FingerprintData | null): string {
   return 'Computer';
 }
 
+function mapWindowsVersion(platformVersion: string): string | null {
+  const parts = platformVersion.split('.');
+  const major = Number.parseInt(parts[0] ?? '', 10);
+  if (!Number.isFinite(major)) return null;
+  if (major >= 13) return 'Windows 11';
+  if (major >= 1) return 'Windows 10';
+  const minor = Number.parseInt(parts[1] ?? '', 10);
+  if (minor === 3) return 'Windows 8.1';
+  if (minor === 2) return 'Windows 8';
+  if (minor === 1) return 'Windows 7';
+  return null;
+}
+
 function formatOS(fp: FingerprintData | null): string {
   if (!fp) return EM;
   const he = fp.clientHints?.highEntropy as Record<string, unknown> | undefined | null;
   const plat = fp.clientHints?.platform ?? fp.navigatorDeepDive?.platform;
   const pv = he && typeof he['platformVersion'] === 'string' ? he['platformVersion'] : '';
+  if (plat === 'Windows' && pv) {
+    const mapped = mapWindowsVersion(pv);
+    if (mapped) return mapped;
+  }
   if (plat && pv) return `${plat} ${pv}`.trim();
   if (plat) return plat;
   return dash(fp.navigatorDeepDive?.platform);
@@ -135,6 +152,11 @@ function touchscreenLine(fp: FingerprintData | null): string {
   return n > 0 ? 'Yes' : 'No';
 }
 
+function ipLabel(ip: string | undefined): string {
+  if (!ip) return 'IP Address';
+  return ip.includes(':') ? 'IP Address (IPv6)' : 'IP Address (IPv4)';
+}
+
 interface DeviceFingerprintPanelProps {
   network: NetworkInfo | null;
   fingerprint: FingerprintData | null;
@@ -153,27 +175,26 @@ export function DeviceFingerprintPanel({
   const fpReady = !loadingFingerprint && fingerprint != null;
   const netReady = !loadingNetwork && network != null;
 
-  const defaultFingerprint = fpReady ? dash(fingerprint!.legacyDisplayHash) : EM;
-  const defaultIp = netReady ? dash(network!.ip) : EM;
-  const defaultGpu = fpReady ? dash(fingerprint!.gpu) : EM;
-  const defaultResolution = screenResolution(fingerprint);
-  const defaultTz = getTimezone();
-  const defaultDevice = getDeviceLabel(fingerprint);
-
   if (!expanded) {
     return (
       <div className="fingerprint-panel">
-        <div>Fingerprint: {defaultFingerprint}</div>
-        <div>IP Address: {defaultIp}</div>
-        <div>Graphics Card: {defaultGpu}</div>
-        <div>Screen Resolution: {defaultResolution}</div>
-        <div>Timezone: {defaultTz}</div>
-        <div>Device: {defaultDevice}</div>
         <div>
           <button type="button" onClick={() => setExpanded(true)}>
-            Expand Details
+            Expand
           </button>
         </div>
+
+        <div><strong>Fingerprint:</strong> {fpReady ? dash(fingerprint!.legacyDisplayHash) : EM}</div>
+        <div><strong>{ipLabel(network?.ip)}:</strong> {netReady ? dash(network!.ip) : EM}</div>
+        <div><strong>City:</strong> {formatLocation(network)}</div>
+        <div><strong>Country:</strong> {formatJurisdiction(network)}</div>
+        <div><strong>Internet Provider:</strong> {netReady ? dash(network!.isp) : EM}</div>
+        <div><strong>Graphics Card:</strong> {fpReady ? dash(fingerprint!.gpu) : EM}</div>
+        <div><strong>Screen Resolution:</strong> {screenResolution(fingerprint)}</div>
+        <div><strong>Operating System:</strong> {formatOS(fingerprint)}</div>
+        <div><strong>Timezone:</strong> {getTimezone()}</div>
+        <div><strong>Touchscreen:</strong> {fpReady ? touchscreenLine(fingerprint) : EM}</div>
+        <div><strong>Languages:</strong> {fingerprint?.navigatorDeepDive?.languages?.length ? fingerprint.navigatorDeepDive.languages.join(', ') : EM}</div>
       </div>
     );
   }
@@ -188,122 +209,45 @@ export function DeviceFingerprintPanel({
         </button>
       </div>
 
-      <div className="fingerprint-panel__section font-bold">Fingerprint</div>
-      <div>
-        <strong>Unique ID:</strong> {fpReady ? dash(fp!.legacyDisplayHash) : EM}
-      </div>
-      <div>
-        <strong>Device ID (SHA-256):</strong> {fpReady ? dash(fp!.primaryId) : EM}
-      </div>
-      <div>
-        <strong>Audio Signature:</strong> {fpReady ? dash(fp!.audioSignature) : EM}
-      </div>
-      <div>
-        <strong>Bot Detection:</strong> {botDetection(fp)}
-      </div>
-      <div>
-        <strong>Entropy:</strong> {formatEntropy(fp)}
-      </div>
-      <div>
-        <strong>Page Load:</strong> {pageLoadMs(fp)}
-      </div>
+      <div><strong>Fingerprint:</strong> {fpReady ? dash(fp!.legacyDisplayHash) : EM}</div>
+      <div><strong>Device ID (SHA-256):</strong> {fpReady ? dash(fp!.primaryId) : EM}</div>
+      <div><strong>Audio Signature:</strong> {fpReady ? dash(fp!.audioSignature) : EM}</div>
+      <div><strong>Bot Detection:</strong> {botDetection(fp)}</div>
+      <div><strong>Entropy:</strong> {formatEntropy(fp)}</div>
+      <div><strong>Page Load:</strong> {pageLoadMs(fp)}</div>
 
-      <div className="fingerprint-panel__section font-bold">Network</div>
-      <div>
-        <strong>IP Address:</strong> {netReady ? dash(network!.ip) : EM}
-      </div>
-      <div>
-        <strong>Location:</strong> {formatLocation(network)}
-      </div>
-      <div>
-        <strong>Jurisdiction:</strong> {formatJurisdiction(network)}
-      </div>
-      <div>
-        <strong>Internet Provider:</strong> {netReady ? dash(network!.isp) : EM}
-      </div>
-      <div>
-        <strong>Network ID (ASN):</strong> {formatAsn(network)}
-      </div>
-      <div>
-        <strong>Location Source:</strong> {netReady ? dash(network!.source) : EM}
-      </div>
+      <div><strong>{ipLabel(network?.ip)}:</strong> {netReady ? dash(network!.ip) : EM}</div>
+      <div><strong>City:</strong> {formatLocation(network)}</div>
+      <div><strong>Country:</strong> {formatJurisdiction(network)}</div>
+      <div><strong>Internet Provider:</strong> {netReady ? dash(network!.isp) : EM}</div>
+      <div><strong>Network ID (ASN):</strong> {formatAsn(network)}</div>
 
-      <div className="fingerprint-panel__section font-bold">Hardware</div>
-      <div>
-        <strong>Graphics Card:</strong> {fpReady ? dash(fp!.gpu) : EM}
-      </div>
-      <div>
-        <strong>GPU Fingerprint:</strong> {fpReady ? dash(fp!.advancedWebGLHash) : EM}
-      </div>
-      <div>
-        <strong>CPU Cores:</strong> {fpReady ? dash(fp!.logicalProcessors) : EM}
-      </div>
-      <div>
-        <strong>RAM:</strong> {formatRam(fp)}
-      </div>
-      <div>
-        <strong>Screen Resolution:</strong> {screenResolution(fp)}
-      </div>
-      <div>
-        <strong>Pixel Density:</strong> {fpReady ? pixelDensity(fp) : EM}
-      </div>
-      <div>
-        <strong>Viewport (Outer):</strong> {viewportOuter(fp)}
-      </div>
-      <div>
-        <strong>Viewport (Inner):</strong> {viewportInner(fp)}
-      </div>
-      <div>
-        <strong>Color Depth:</strong> {colorDepthLine(fp)}
-      </div>
+      <div><strong>Graphics Card:</strong> {fpReady ? dash(fp!.gpu) : EM}</div>
+      <div><strong>GPU Fingerprint:</strong> {fpReady ? dash(fp!.advancedWebGLHash) : EM}</div>
+      <div><strong>CPU Cores:</strong> {fpReady ? dash(fp!.logicalProcessors) : EM}</div>
+      <div><strong>RAM:</strong> {formatRam(fp)}</div>
+      <div><strong>Screen Resolution:</strong> {screenResolution(fp)}</div>
+      <div><strong>Pixel Density:</strong> {fpReady ? pixelDensity(fp) : EM}</div>
+      <div><strong>Viewport (Outer):</strong> {viewportOuter(fp)}</div>
+      <div><strong>Viewport (Inner):</strong> {viewportInner(fp)}</div>
+      <div><strong>Color Depth:</strong> {colorDepthLine(fp)}</div>
 
-      <div className="fingerprint-panel__section font-bold">Browser & Environment</div>
-      <div>
-        <strong>Canvas Signature:</strong> {fpReady ? dash(fp!.environmentHash) : EM}
-      </div>
-      <div>
-        <strong>WebGL Hash:</strong> {fpReady ? dash(fp!.advancedWebGLHash) : EM}
-      </div>
-      <div>
-        <strong>Extended Canvas Probe:</strong> {fpReady ? dash(fp!.canvasExtendedProbe) : EM}
-      </div>
-      <div>
-        <strong>Audio Fingerprint:</strong> {fpReady ? dash(fp!.audioSignature) : EM}
-      </div>
-      <div>
-        <strong>Enhanced Audio Hash:</strong> {fpReady ? dash(fp!.enhancedAudioHash) : EM}
-      </div>
-      <div>
-        <strong>Operating System:</strong> {formatOS(fp)}
-      </div>
-      <div>
-        <strong>Timezone:</strong> {getTimezone()}
-      </div>
-      <div>
-        <strong>Storage:</strong> {fpReady ? dash(fp!.storageEstimate) : EM}
-      </div>
-      <div>
-        <strong>Touchscreen:</strong> {fpReady ? touchscreenLine(fp) : EM}
-      </div>
+      <div><strong>Canvas Signature:</strong> {fpReady ? dash(fp!.environmentHash) : EM}</div>
+      <div><strong>WebGL Hash:</strong> {fpReady ? dash(fp!.advancedWebGLHash) : EM}</div>
+      <div><strong>Extended Canvas Probe:</strong> {fpReady ? dash(fp!.canvasExtendedProbe) : EM}</div>
+      <div><strong>Audio Fingerprint:</strong> {fpReady ? dash(fp!.audioSignature) : EM}</div>
+      <div><strong>Enhanced Audio Hash:</strong> {fpReady ? dash(fp!.enhancedAudioHash) : EM}</div>
+      <div><strong>Operating System:</strong> {formatOS(fp)}</div>
+      <div><strong>Timezone:</strong> {getTimezone()}</div>
+      <div><strong>Storage:</strong> {fpReady ? dash(fp!.storageEstimate) : EM}</div>
+      <div><strong>Touchscreen:</strong> {fpReady ? touchscreenLine(fp) : EM}</div>
       <div>
         <strong>Languages:</strong>{' '}
         {fp?.navigatorDeepDive?.languages?.length ? fp.navigatorDeepDive.languages.join(', ') : EM}
       </div>
-      <div>
-        <strong>Client Hints:</strong> {formatClientHints(fp?.clientHints ?? null)}
-      </div>
-      <div>
-        <strong>Installed Fonts:</strong> {formatFonts(fp?.detectedFonts)}
-      </div>
-      <div>
-        <strong>User Agent:</strong> {fp?.navigatorDeepDive?.userAgent ? fp.navigatorDeepDive.userAgent : EM}
-      </div>
-
-      <div>
-        <button type="button" onClick={() => setExpanded(false)}>
-          Collapse
-        </button>
-      </div>
+      <div><strong>Client Hints:</strong> {formatClientHints(fp?.clientHints ?? null)}</div>
+      <div><strong>Installed Fonts:</strong> {formatFonts(fp?.detectedFonts)}</div>
+      <div><strong>User Agent:</strong> {fp?.navigatorDeepDive?.userAgent ? fp.navigatorDeepDive.userAgent : EM}</div>
     </div>
   );
 }

@@ -22,7 +22,7 @@ function geoipApiPlugin(): Plugin {
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: process.env.GITHUB_PAGES_BASE || '/',
+  base: '/',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
