@@ -1,4 +1,4 @@
-name = "precision-scanner"
+name = "simple-fingerprint-source"
 compatibility_date = "2025-04-01"
 main = "src/worker.ts"
 

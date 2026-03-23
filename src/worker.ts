@@ -1,6 +1,6 @@
-import { normalizeIdentity } from '@/lib/normalize';
-import { generateCoreFingerprint, generateExtendedFingerprint } from '@/lib/identity-fingerprint';
-import { compareIdentities, buildMatchResult } from '@/lib/comparison';
+import { normalizeIdentity } from './lib/normalize';
+import { generateCoreFingerprint, generateExtendedFingerprint } from './lib/identity-fingerprint';
+import { compareIdentities, buildMatchResult } from './lib/comparison';
 import type {
   FingerprintData,
   NetworkInfo,
@@ -8,7 +8,7 @@ import type {
   ObservationPayload,
   ObservationResponse,
   Classification,
-} from '@/types';
+} from './types';
 
 interface Env {
   DB: D1Database;
