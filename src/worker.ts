@@ -11,7 +11,7 @@ import type {
 } from './types';
 
 interface Env {
-  DB: D1Database;
+  DB?: D1Database;
 }
 
 interface CfProperties {
@@ -84,6 +84,15 @@ function jsonHeaders(): HeadersInit {
   };
 }
 
+function databaseUnavailable(): Response {
+  return new Response(JSON.stringify({
+    error: 'D1 database is not configured',
+  }), {
+    status: 503,
+    headers: jsonHeaders(),
+  });
+}
+
 async function handlePostObservation(request: Request, env: Env): Promise<Response> {
   let payload: ObservationPayload;
   try {
@@ -109,14 +118,30 @@ async function handlePostObservation(request: Request, env: Env): Promise<Respon
   const observationId = uuid();
   const createdAt = nowISO();
 
+  // Allow the core scanner to keep working before a production D1 database
+  // has been created and bound. History/matching is enabled automatically
+  // once the DB binding is present.
+  if (!env.DB) {
+    const response: ObservationResponse = {
+      observationId,
+      normalized,
+      coreFingerprint: coreFP,
+      extendedFingerprint: extendedFP,
+      match: buildMatchResult(null, null, null, 0),
+    };
+
+    return new Response(JSON.stringify(response), { status: 201, headers: jsonHeaders() });
+  }
+
+  const db = env.DB;
   const rawJson = JSON.stringify({ fingerprint: fp, network: net, timezone });
   const normalizedJson = JSON.stringify(normalized);
 
   // --- Cluster matching ---
-  const matchResult = await matchAndCluster(env.DB, normalized, coreFP, observationId, createdAt, normalizedJson);
+  const matchResult = await matchAndCluster(db, normalized, coreFP, observationId, createdAt, normalizedJson);
 
   // --- Store observation ---
-  await env.DB.prepare(
+  await db.prepare(
     `INSERT INTO observations (observation_id, created_at, raw_json, normalized_json, core_fingerprint, extended_fingerprint, matched_cluster_id, comparison_json)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(
@@ -259,6 +284,8 @@ async function updateCluster(
 // ---------------------------------------------------------------------------
 
 async function handleGetObservation(id: string, env: Env): Promise<Response> {
+  if (!env.DB) return databaseUnavailable();
+
   const row = await env.DB.prepare(
     `SELECT * FROM observations WHERE observation_id = ?`
   ).bind(id).first();
@@ -271,6 +298,8 @@ async function handleGetObservation(id: string, env: Env): Promise<Response> {
 }
 
 async function handleGetObservationsByFingerprint(coreFP: string, env: Env): Promise<Response> {
+  if (!env.DB) return databaseUnavailable();
+
   const rows = await env.DB.prepare(
     `SELECT observation_id, created_at, core_fingerprint, extended_fingerprint, matched_cluster_id
      FROM observations WHERE core_fingerprint = ? ORDER BY created_at DESC LIMIT 50`
@@ -280,6 +309,8 @@ async function handleGetObservationsByFingerprint(coreFP: string, env: Env): Pro
 }
 
 async function handleGetCluster(id: string, env: Env): Promise<Response> {
+  if (!env.DB) return databaseUnavailable();
+
   const cluster = await env.DB.prepare(
     `SELECT * FROM identity_clusters WHERE cluster_id = ?`
   ).bind(id).first();
@@ -303,21 +334,28 @@ async function handleGetCluster(id: string, env: Env): Promise<Response> {
 // Privacy / retention
 // ---------------------------------------------------------------------------
 
-async function handleGetPrivacy(): Promise<Response> {
+async function handleGetPrivacy(env: Env): Promise<Response> {
+  const persistenceEnabled = Boolean(env.DB);
+
   return new Response(JSON.stringify({
-    stored: [
+    persistenceEnabled,
+    stored: persistenceEnabled ? [
       'Raw scan signals (fingerprint, network, timezone)',
       'Normalized identity summary',
       'Core and extended fingerprint hashes (SHA-256)',
       'Cluster membership and match scores',
+    ] : [
+      'No server-side observation history is stored until a D1 database is configured',
     ],
-    retention: {
+    retention: persistenceEnabled ? {
       raw_observations: '90 days',
       normalized_records: 'rolling, tied to cluster lifetime',
       ip_addresses: 'Hashed after 30 days in raw storage',
-    },
+    } : null,
     comparison: 'Weighted scoring across device (40%), network (20%), browser (20%), environment (20%) signals',
-    note: 'Fingerprints are deterministic hashes of normalized signals; they are environment-sensitive and may change with browser updates, viewport changes, or hardware swaps.',
+    note: persistenceEnabled
+      ? 'Fingerprints are deterministic hashes of normalized signals; they are environment-sensitive and may change with browser updates, viewport changes, or hardware swaps.'
+      : 'Fingerprint generation remains available, but historical matching is disabled until D1 is configured.',
   }), { headers: jsonHeaders() });
 }
 
@@ -358,14 +396,16 @@ export default {
     }
 
     if (path === '/api/privacy' && method === 'GET') {
-      return handleGetPrivacy();
+      return handleGetPrivacy(env);
     }
 
     return new Response(null, { status: 404 });
   },
 
   async scheduled(_controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
-    await runRetentionCleanup(env.DB);
+    if (env.DB) {
+      await runRetentionCleanup(env.DB);
+    }
   },
 } satisfies ExportedHandler<Env>;
 
