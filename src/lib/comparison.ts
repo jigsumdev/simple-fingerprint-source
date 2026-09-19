@@ -12,7 +12,7 @@ import type {
   NormalizedEnvironment,
   Classification,
   MatchResult,
-} from '@/types';
+} from '../types';
 
 // ---------------------------------------------------------------------------
 // Section weights (must sum to 1.0)
