@@ -1,4 +1,4 @@
-import type { ClientHintsData, NavigatorDeepDive } from '@/types';
+import type { ClientHintsData, NavigatorDeepDive } from '../types';
 
 export interface BrowserInfo {
   family: string;
