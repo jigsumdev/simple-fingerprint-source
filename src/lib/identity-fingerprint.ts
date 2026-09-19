@@ -5,7 +5,7 @@
  *
  * Isomorphic -- uses Web Crypto (available in browser and Cloudflare Workers).
  */
-import type { NormalizedIdentity } from '@/types';
+import type { NormalizedIdentity } from '../types';
 
 async function sha256(input: string): Promise<string> {
   const enc = new TextEncoder().encode(input);
