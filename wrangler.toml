@@ -1,6 +1,7 @@
 name = "simple-fingerprint-source"
 compatibility_date = "2025-04-01"
 main = "src/worker.ts"
+tsconfig = "tsconfig.worker.json"
 
 [assets]
 directory = "./dist"
