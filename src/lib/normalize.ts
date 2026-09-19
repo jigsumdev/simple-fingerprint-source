@@ -12,8 +12,8 @@ import type {
   NormalizedEnvironment,
   ClientHintsData,
   NavigatorDeepDive,
-} from '@/types';
-import { detectBrowser, summarizeClientHints } from '@/lib/browser-detect';
+} from '../types';
+import { detectBrowser, summarizeClientHints } from './browser-detect';
 
 // ---------------------------------------------------------------------------
 // Public entry point
